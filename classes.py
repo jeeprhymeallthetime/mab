@@ -142,7 +142,11 @@ class arm_tracker:
                     if well_tracked_arms.__len__() <= 3:
                         print("stuff")
                         choose_arm = random.choice(known_arms)
-                        otr_1 = max(ongoing_test_results)
+                        top_3 = sorted([ongoing_test_results[i] for i in well_tracked_arms], reverse = True)[:3]
+                        # TODO: Here I need to look into how indexes show up with the "top 3", and figure out the best 'softmax'-like approach to divide up batch arm-pulls
+                        # TODO: I also need to set the "batch_pulls = True" self-flag and make sure it doesn't mess up with the unknown-known-wellknown cycle of arm-pulls. This cycle is probably a critical piece of optimization.
+                        # TODO: Start tracking some sort of metric to compare this new selection process vs. random sampling
+                        # TODO: Need to rename this function away from the 'binomial' language, since it's not using that anymore
                     else:
                         choose_arm = random.choice(known_arms)
                 else:
@@ -153,8 +157,6 @@ class arm_tracker:
             bias_check_1 += 1
             return bias_check_1
 
-            # TODO: Pull batches of arms
-            # TODO: Build bias_check for choosing binomial vs. random pull
 
 
     def track_state(self):
