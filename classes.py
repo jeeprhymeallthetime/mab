@@ -1,6 +1,8 @@
 from numpy import random
 from math import floor
 from numpy import bincount, unique
+from scipy.stats import binom
+
 # from random import choice
 
 
@@ -29,6 +31,7 @@ def test_machine(arm):
     else:
         return 0
 
+
 def pull_arm(r, pa):
     arm_pulled = r[pa]
     return test_machine(arm_pulled)
@@ -50,14 +53,13 @@ class arm_tracker:
         self.num_bands = num_bands
         self.row = many_bandits(self.num_bands).mab
 
-
         self.num_r = self.row.__len__()
         self.interval = 1 / self.num_r
         self.arms_picked = []
         self.test_results_binomial = self.build_states_binomial()
         self.test_results_random = self.build_stats_random()
         self.odds = self.find_odds()
-        #self.state_tracker = self.track_state()
+        # self.state_tracker = self.track_state()
 
     def find_odds(self):
         odds = []
@@ -87,7 +89,10 @@ class arm_tracker:
                 test_results.append(-1)
             elif unique(self.tracker[i]).__len__() == 1:
                 # print("Insufficient statistics to estimate odds on arm #", i)
-                test_results.append(-2)
+                if self.tracker[i].__len__() > 3:
+                    test_results.append(sum(self.tracker[i]) / self.tracker[i].__len__())
+                else:
+                    test_results.append(-2)
             else:
                 test_results.append(bincount(self.tracker[i])[1] / sum(bincount(self.tracker[i])))
         return test_results
@@ -98,37 +103,59 @@ class arm_tracker:
         for i in range(0, self.num_bands):
             self.tracker.append([])
         print("The status of tracker in binomial after instantiation: ", self.tracker.__len__())
-        bias_check_2 = 0
+        bias_check_1 = 0
         for n in range(0, self.n_tests):
             track_state_1, track_state_2 = self.track_state()
             # print(track_state_1)
-            if all(st == 0 for st in track_state_1):
-                self.pick_any_random_arm() # TODO: Here's the bug - we need to actually follow through with the result from the chosen arm
-            elif any(st != 0 for st in track_state_1):
-                if (bias_check_2 % 2) == 0:
-                    # check known tracker
-                    known_arms = [i for i in range(len(track_state_1)) if track_state_1[i] > 0]  # Identify arms that have been pulled
-                    bias_check_2 = self.set_of_arms_pull(bias_check_2, known_arms, "random")
+            if all(st == 0 for st in track_state_2):
+                self.pick_any_random_arm()
+            elif any(st != 0 for st in track_state_2):
+                if (bias_check_1 % 2) == 0:
+                    bias_check_1 = self.set_of_arms_pull(bias_check_1, "binomial", "known", track_state_1)
                 else:
-                    unknown_arms = [i for i in range(len(track_state_1)) if track_state_1[i] == 0]  # Identify arms that have not been pulled
-                    if unknown_arms.__len__() != 0:
-                        bias_check_2 = self.set_of_arms_pull(bias_check_2, unknown_arms, "random")
-                    else: #Just do a "known arms" check if there are no unknown arms
-                        known_arms = [i for i in range(len(track_state_1)) if
-                                      track_state_1[i] > 0]  # Identify arms that have been pulled
-                        bias_check_2 = self.set_of_arms_pull(bias_check_2, known_arms, "random")
+                    bias_check_1 = self.set_of_arms_pull(bias_check_1, "binomial", "unknown", track_state_1)
 
         return self.check_test_results()
 
-    def set_of_arms_pull(self, bias_check_2, known_arms, type):
-        if type=="random":
-            choose_arm = random.choice(known_arms)
+    def set_of_arms_pull(self, bias_check_1, type, k_or_u, track_state):
+        known_arms = [i for i in range(len(track_state)) if track_state[i] > 0]  # Identify index for known
+        unknown_arms = [i for i in range(len(track_state)) if track_state[i] == 0]  # Identify index for unknown
+        bias_check_2 = 0
+        if type == "random": # This 'random' flag is redundant for normal operation but useful for debugging this
+            # function
+            if k_or_u == "unknown" and unknown_arms.__len__() != 0:
+                choose_arm = random.choice(unknown_arms)
+            else:
+                choose_arm = random.choice(known_arms)
             arm_result = pull_arm(self.row, choose_arm)
             self.tracker[choose_arm].append(arm_result)
+            bias_check_1 += 1
+            return bias_check_1
+        elif type == "binomial":
+            if k_or_u == "unknown" and unknown_arms.__len__() != 0:
+                choose_arm = random.choice(unknown_arms)
+            else:
+                # TODO: "The 3 or more experiments could be a variable we play with"
+                ongoing_test_results = self.check_test_results()
+                well_tracked_arms = [i for i in range(len(ongoing_test_results)) if ongoing_test_results[i] > 0.0]
+                if (bias_check_2 % 2) == 0:
+                    if well_tracked_arms.__len__() <= 3:
+                        print("stuff")
+                        choose_arm = random.choice(known_arms)
+                        otr_1 = max(ongoing_test_results)
+                    else:
+                        choose_arm = random.choice(known_arms)
+                else:
+                    choose_arm = random.choice([item for item in known_arms if item not in well_tracked_arms])
             bias_check_2 += 1
-            return bias_check_2
-        elif type=="binomial":
-            print("well, you're done")
+            arm_result = pull_arm(self.row, choose_arm)
+            self.tracker[choose_arm].append(arm_result)
+            bias_check_1 += 1
+            return bias_check_1
+
+            # TODO: Pull batches of arms
+            # TODO: Build bias_check for choosing binomial vs. random pull
+
 
     def track_state(self):
         track_state_1 = []
